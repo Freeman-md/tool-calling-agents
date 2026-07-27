@@ -4,7 +4,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "lab:tools": "tsx --env-file=.env scripts/tool-calling-lab.ts"
+    "lab:tools": "tsx --env-file=.env scripts/tool-calling-lab.ts",
+    "lab:state": "tsx --env-file=.env scripts/multi-turn-tool-lab.ts"
+
   },
   "keywords": [],
   "author": "",
