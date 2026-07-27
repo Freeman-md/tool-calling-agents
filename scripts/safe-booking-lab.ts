@@ -615,12 +615,21 @@ async function generateAssistantTurn(
   conversation: OpenAI.Responses.ResponseInputItem[],
 ): Promise<string> {
   for (let toolTurn = 0; toolTurn < 6; toolTurn += 1) {
+    const mustExecuteConfirmedBooking =
+      workflow.pending_booking?.status === "confirmed";
+
     const response = await openai.responses.create({
       model,
       instructions: buildInstructions(),
       input: conversation,
       tools,
       parallel_tool_calls: false,
+      tool_choice: mustExecuteConfirmedBooking
+        ? {
+            type: "function",
+            name: "book_consultation",
+          }
+        : "auto",
     });
 
     conversation.push(
@@ -632,6 +641,18 @@ async function generateAssistantTurn(
     );
 
     if (toolCalls.length === 0) {
+      /*
+       * Never permit a text response while a confirmed write
+       * is still waiting to execute.
+       */
+      if (
+        workflow.pending_booking?.status === "confirmed"
+      ) {
+        throw new Error(
+          "Invariant violated: confirmed booking was not executed.",
+        );
+      }
+
       return response.output_text;
     }
 
