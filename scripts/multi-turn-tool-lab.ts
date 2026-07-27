@@ -62,27 +62,27 @@ const tools: OpenAI.Responses.Tool[] = [
 ];
 
 async function findConsultationSlots(
-  args: z.infer<typeof FindSlotsArguments>,
+    args: z.infer<typeof FindSlotsArguments>,
 ): Promise<ToolResult> {
-  return {
-    ok: true,
-    timezone: args.timezone,
-    duration_minutes: args.duration_minutes,
-    slots: [
-      {
-        id: "slot_001",
-        starts_at: "2026-07-28T10:00:00+01:00",
-      },
-      {
-        id: "slot_002",
-        starts_at: "2026-07-28T14:30:00+01:00",
-      },
-      {
-        id: "slot_003",
-        starts_at: "2026-07-29T11:00:00+01:00",
-      },
-    ],
-  };
+    return {
+        ok: true,
+        timezone: args.timezone,
+        duration_minutes: args.duration_minutes,
+        slots: [
+            {
+                id: "slot_001",
+                starts_at: "2026-07-28T10:00:00+01:00",
+            },
+            {
+                id: "slot_002",
+                starts_at: "2026-07-28T14:30:00+01:00",
+            },
+            {
+                id: "slot_003",
+                starts_at: "2026-07-29T11:00:00+01:00",
+            },
+        ],
+    };
 }
 
 async function executeTool(
@@ -97,28 +97,38 @@ async function executeTool(
         }
     }
 
-    const parsed = FindSlotsArguments.safeParse(
-        JSON.parse(rawArguments)
-    )
+    let argumentsJson: unknown;
+
+    try {
+        argumentsJson = JSON.parse(rawArguments);
+    } catch {
+        return {
+            ok: false,
+            code: "INVALID_JSON",
+            message: "The tool arguments were not valid JSON.",
+        };
+    }
+
+    const parsed = FindSlotsArguments.safeParse(argumentsJson);
 
     if (!parsed.success) {
         return {
             ok: false,
             code: "INVALID_ARGUMENTS",
-            message: parsed.error.message
-        }
+            message: parsed.error.message,
+        };
     }
 
     return findConsultationSlots(parsed.data)
 }
 
 async function generateAssistantTurn(
-  conversation: OpenAI.Responses.ResponseInputItem[],
+    conversation: OpenAI.Responses.ResponseInputItem[],
 ): Promise<string> {
-  for (let toolTurn = 0; toolTurn < 4; toolTurn += 1) {
-    const response = await openai.responses.create({
-      model,
-      instructions: `
+    for (let toolTurn = 0; toolTurn < 4; toolTurn += 1) {
+        const response = await openai.responses.create({
+            model,
+            instructions: `
 You are a consultation assistant.
 
 Your job is to help the user find a consultation slot.
@@ -135,88 +145,88 @@ Rules:
 - You can find availability, but you cannot create bookings.
 - Never claim that a consultation has been booked.
       `.trim(),
-      input: conversation,
-      tools,
-      parallel_tool_calls: false,
-    });
+            input: conversation,
+            tools,
+            parallel_tool_calls: false,
+        });
 
-    conversation.push(...toResponseInputItems(response.output));
+        conversation.push(...toResponseInputItems(response.output));
 
-    const toolCalls = response.output.filter(
-      (item) => item.type === "function_call",
+        const toolCalls = response.output.filter(
+            (item) => item.type === "function_call",
+        );
+
+        if (toolCalls.length === 0) {
+            return response.output_text;
+        }
+
+        for (const toolCall of toolCalls) {
+            console.log(`\n[Tool request: ${toolCall.name}]`);
+            console.log(`[Arguments: ${toolCall.arguments}]`);
+
+            const result = await executeTool(
+                toolCall.name,
+                toolCall.arguments,
+            );
+
+            console.log("[Tool result]", result);
+
+            conversation.push({
+                type: "function_call_output",
+                call_id: toolCall.call_id,
+                output: JSON.stringify(result),
+            });
+        }
+    }
+
+    throw new Error(
+        "The assistant exceeded the maximum number of tool turns.",
     );
-
-    if (toolCalls.length === 0) {
-      return response.output_text;
-    }
-
-    for (const toolCall of toolCalls) {
-      console.log(`\n[Tool request: ${toolCall.name}]`);
-      console.log(`[Arguments: ${toolCall.arguments}]`);
-
-      const result = await executeTool(
-        toolCall.name,
-        toolCall.arguments,
-      );
-
-      console.log("[Tool result]", result);
-
-      conversation.push({
-        type: "function_call_output",
-        call_id: toolCall.call_id,
-        output: JSON.stringify(result),
-      });
-    }
-  }
-
-  throw new Error(
-    "The assistant exceeded the maximum number of tool turns.",
-  );
 }
 
 async function main() {
-  const terminal = readline.createInterface({
-    input: inputStream,
-    output: outputStream,
-  });
+    const terminal = readline.createInterface({
+        input: inputStream,
+        output: outputStream,
+    });
 
-  const conversation: OpenAI.Responses.ResponseInputItem[] = [];
+    const conversation: OpenAI.Responses.ResponseInputItem[] = [];
 
-  console.log(`
+    console.log(`
 Consultation assistant started.
 
 Type "exit" to stop.
   `.trim());
 
-  try {
-    while (true) {
-      const userMessage = await terminal.question("\nYou: ");
+    try {
+        while (true) {
+            const userMessage = await terminal.question("\nYou: ");
 
-      if (userMessage.trim().toLowerCase() === "exit") {
-        console.log("Goodbye.");
-        return;
-      }
+            if (userMessage.trim().toLowerCase() === "exit") {
+                console.log("Goodbye.");
+                return;
+            }
 
-      if (!userMessage.trim()) {
-        continue;
-      }
+            if (!userMessage.trim()) {
+                continue;
+            }
 
-      conversation.push({
-        role: "user",
-        content: userMessage,
-      });
+            conversation.push({
+                role: "user",
+                content: userMessage,
+            });
 
-      const assistantMessage =
-        await generateAssistantTurn(conversation);
+            const assistantMessage =
+                await generateAssistantTurn(conversation);
 
-      console.log(`\nAssistant: ${assistantMessage}`);
+            console.log(`\nAssistant: ${assistantMessage}`);
+        }
+    } finally {
+        terminal.close();
     }
-  } finally {
-    terminal.close();
-  }
 }
 
 main().catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
+    console.error(error);
+    process.exitCode = 1;
 });
