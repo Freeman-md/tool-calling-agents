@@ -6,13 +6,15 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "lab:tools": "tsx --env-file=.env scripts/tool-calling-lab.ts",
     "lab:state": "tsx --env-file=.env scripts/multi-turn-tool-lab.ts",
-    "lab:booking": "tsx --env-file=.env scripts/safe-booking-lab.ts"
+    "lab:booking": "tsx --env-file=.env scripts/safe-booking-lab.ts",
+    "lab:agents": "tsx --env-file=.env scripts/agents-sdk-lab.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@openai/agents": "^0.14.0",
     "openai": "^6.49.0",
     "zod": "^4.4.3"
   },
