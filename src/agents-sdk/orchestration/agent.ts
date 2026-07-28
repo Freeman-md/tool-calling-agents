@@ -1,89 +1,38 @@
 import {
-  Agent,
-  tool,
+    Agent,
 } from "@openai/agents";
 
-import {
-  BookConsultationArguments,
-  FindSlotsArguments,
-} from "../domain/schemas";
-
 import type {
-  AgentsBookingService,
+    AgentsBookingService,
 } from "../application/booking-service";
 import { buildInstructions } from "./instructions";
+import { bookConsultation, findConsultationSlots } from "./tools";
 
 export function createConsultationAgent(
-  service: AgentsBookingService,
-  model: string,
+    service: AgentsBookingService,
+    model: string,
 ) {
-  const findConsultationSlots = tool({
-    name:
-      "find_consultation_slots",
+    return new Agent({
+        name:
+            "Consultation booking assistant",
 
-    description:
-      "Find currently available consultation slots. This is read-only and does not reserve or create a booking.",
+        model,
 
-    parameters: FindSlotsArguments,
+        instructions: () =>
+            buildInstructions(service),
 
-    execute: async (input) => {
-      console.log(
-        "\n[SDK executing find_consultation_slots]",
-      );
+        tools: [
+            findConsultationSlots(service),
+            bookConsultation(service),
+        ],
 
-      console.log(input);
-
-      return service.findAvailableSlots(
-        input,
-      );
-    },
-  });
-
-  const bookConsultation = tool({
-    name: "book_consultation",
-
-    description:
-      "Create a consultation booking using a slot from the latest availability result. This changes external state and requires explicit human approval.",
-
-    parameters:
-      BookConsultationArguments,
-
-    needsApproval: true,
-
-    execute: async (input) => {
-      console.log(
-        "\n[SDK executing book_consultation]",
-      );
-
-      console.log(input);
-
-      return service.createBooking(
-        input,
-      );
-    },
-  });
-
-  return new Agent({
-    name:
-      "Consultation booking assistant",
-
-    model,
-
-    instructions: () =>
-      buildInstructions(service),
-
-    tools: [
-      findConsultationSlots,
-      bookConsultation,
-    ],
-
-    modelSettings: {
-      parallelToolCalls: false,
-    },
-  });
+        modelSettings: {
+            parallelToolCalls: false,
+        },
+    });
 }
 
 export type ConsultationAgent =
-  ReturnType<
-    typeof createConsultationAgent
-  >;
+    ReturnType<
+        typeof createConsultationAgent
+    >;
