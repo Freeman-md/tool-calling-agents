@@ -211,7 +211,7 @@ async function findConsultationSlots(
     const slots: ConsultationSlot[] = startTimes
         .filter((startsAt) => !occupiedStartTimes.has(startsAt))
         .map((startsAt, index) => ({
-            id: `slot_${args.duration_minutes}_${index + 1}`,
+            id: createSlotId(startsAt, args.duration_minutes),
             starts_at: startsAt,
             timezone: args.timezone,
             duration_minutes: args.duration_minutes,
@@ -328,21 +328,41 @@ async function bookConsultation(
     return {
       ok: false,
       code: "PENDING_BOOKING_NOT_FOUND",
-      message:
-        "The referenced pending booking does not exist.",
+      message: "The referenced pending booking does not exist.",
     };
   }
 
   /*
-   * Idempotency check comes before attempting another write.
+   * Reject states that are not authorised to execute.
+   */
+  if (pending.status === "invalid") {
+    return {
+      ok: false,
+      code: "SLOT_UNAVAILABLE",
+      message: "This pending booking is no longer valid.",
+      retryable: true,
+    };
+  }
+
+  if (pending.status === "awaiting_confirmation") {
+    return {
+      ok: false,
+      code: "CONFIRMATION_REQUIRED",
+      message: "The user has not explicitly confirmed this booking.",
+    };
+  }
+
+  /*
+   * At this point, status can only be "confirmed" or "booked".
+   * Perform the idempotency lookup once.
    */
   const existingBooking = bookingsByIdempotencyKey.get(
     pending.idempotency_key,
   );
 
   if (existingBooking) {
-    workflow.last_booking = existingBooking;
     pending.status = "booked";
+    workflow.last_booking = existingBooking;
 
     return {
       ok: true,
@@ -352,20 +372,21 @@ async function bookConsultation(
   }
 
   /*
-   * The application, not the prompt, enforces confirmation.
+   * The workflow says the booking exists, but storage cannot verify it.
    */
-  if (pending.status !== "confirmed") {
+  if (pending.status === "booked") {
     return {
       ok: false,
-      code: "CONFIRMATION_REQUIRED",
-      message:
-        "The user has not explicitly confirmed this booking.",
+      code: "BOOKING_STATE_INCONSISTENT",
+      message: "The booking state could not be verified.",
     };
   }
 
   /*
-   * Recheck external state immediately before the write.
+   * The only remaining state is:
+   * status === "confirmed" and no existing booking.
    */
+
   if (occupiedStartTimes.has(pending.starts_at)) {
     pending.status = "invalid";
 
@@ -391,14 +412,7 @@ async function bookConsultation(
     created_at: new Date().toISOString(),
   };
 
-  /*
-   * Simulate the external calendar write.
-   */
   occupiedStartTimes.add(pending.starts_at);
-
-  /*
-   * Simulate persistent storage using the same idempotency key.
-   */
   bookingsByIdempotencyKey.set(
     pending.idempotency_key,
     booking,
@@ -489,6 +503,16 @@ async function executeTool(
 /* -------------------------------------------------------------------------- */
 /*                        Deterministic confirmation                          */
 /* -------------------------------------------------------------------------- */
+
+function createSlotId(
+  startsAt: string,
+  durationMinutes: SupportedDuration,
+): string {
+  return createHash("sha256")
+    .update(`${startsAt}|${durationMinutes}`)
+    .digest("hex")
+    .slice(0, 16);
+}
 
 function normaliseDecision(value: string): string {
   return value
