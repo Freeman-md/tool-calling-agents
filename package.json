@@ -6,8 +6,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "lab:tools": "tsx --env-file=.env scripts/tool-calling-lab.ts",
     "lab:state": "tsx --env-file=.env scripts/multi-turn-tool-lab.ts",
-    "lab:booking": "tsx --env-file=.env scripts/safe-booking-lab.ts",
-    "lab:agents": "tsx --env-file=.env scripts/agents-sdk-lab.ts"
+    "lab:booking": "tsx --env-file=.env src/manual-orchestration/entrypoints/cli.ts",
+    "lab:agents": "tsx --env-file=.env src/agents-sdk/entrypoints/cli.ts"
   },
   "keywords": [],
   "author": "",
