@@ -1,5 +1,5 @@
-import { tool } from "@openai/agents-core";
-import { AgentsBookingService } from "../application/booking-service";
+import { tool } from "@openai/agents";
+import type { AgentsBookingService } from "../application/booking-service";
 import { BookConsultationArguments, FindSlotsArguments } from "../domain/schemas";
 
 export const findConsultationSlots = (service: AgentsBookingService) => tool({
