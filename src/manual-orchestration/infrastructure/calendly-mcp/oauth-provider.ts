@@ -33,7 +33,6 @@ export class CalendlyOAuthProvider implements OAuthClientProvider {
             ],
             grant_types: [
                 "authorization_code",
-                "refresh_token",
             ],
             response_types: [
                 "code",
