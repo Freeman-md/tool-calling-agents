@@ -17,6 +17,14 @@ import {
 } from "../infrastructure/in-memory";
 
 import {
+  connectCalendlyMcp,
+} from "../infrastructure/calendly-mcp/calendly-mcp-client";
+
+import {
+  CalendlyMcpBridge,
+} from "../infrastructure/calendly-mcp/calendly-mcp-bridge";
+
+import {
   ManualBookingAssistant,
 } from "../orchestration/assistant";
 
@@ -40,6 +48,14 @@ async function main(): Promise<void> {
   const calendar =
     new InMemoryCalendarGateway();
 
+  const calendlyConnection =
+    await connectCalendlyMcp();
+
+  const calendlyBridge =
+    await CalendlyMcpBridge.create(
+      calendlyConnection.client,
+    );
+
   const bookingRepository =
     new InMemoryBookingRepository();
 
@@ -54,6 +70,7 @@ async function main(): Promise<void> {
       new OpenAI(),
       model,
       service,
+      calendlyBridge
     );
 
   const terminal =
@@ -142,6 +159,8 @@ Commands:
       );
     }
   } finally {
+    await calendlyConnection.close();
+
     terminal.close();
   }
 }

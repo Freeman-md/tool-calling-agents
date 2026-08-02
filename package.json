@@ -7,19 +7,25 @@
     "lab:tools": "tsx --env-file=.env scripts/tool-calling-lab.ts",
     "lab:state": "tsx --env-file=.env scripts/multi-turn-tool-lab.ts",
     "lab:booking": "tsx --env-file=.env src/manual-orchestration/entrypoints/cli.ts",
-    "lab:agents": "tsx --env-file=.env src/agents-sdk/entrypoints/cli.ts"
+    "lab:agents": "tsx --env-file=.env src/agents-sdk/entrypoints/cli.ts",
+    "calendly:connect": "tsx --env-file=.env src/manual-orchestration/entrypoints/connect-calendly.ts",
+    "lab:calendly": "tsx --env-file=.env src/manual-orchestration/entrypoints/calendly-cli.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@openai/agents": "^0.14.0",
+    "open": "^11.0.0",
     "openai": "^6.49.0",
+    "pg": "^8.22.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.3",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",

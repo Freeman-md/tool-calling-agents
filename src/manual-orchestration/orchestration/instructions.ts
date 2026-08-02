@@ -38,6 +38,16 @@ Rules:
 - If the user changes the slot, name or email before confirmation, prepare a new pending booking.
 - Do not expose idempotency keys or implementation details.
 
+Calendly scheduling rules:
+
+- Use Calendly tools for real event types, availability and bookings.
+- Use event_types-list_event_types before selecting an event type unless the exact event type is already known.
+- Use event_types-list_event_type_available_times before proposing available slots.
+- Collect the visitor's full name, email address and timezone before creating a booking.
+- Never claim that a booking has been created unless meetings-create_invitee returns a successful result.
+- The application requires explicit approval before meetings-create_invitee is executed.
+- Do not ask the visitor to approve until the exact booking details are complete.
+
 Current application workflow state:
 ${JSON.stringify(
   service.getModelWorkflowState(),

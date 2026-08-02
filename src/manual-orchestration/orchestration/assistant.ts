@@ -1,8 +1,15 @@
-import { OpenAI } from "openai/client.js";
+import {
+  OpenAI,
+} from "openai/client.js";
 
 import type {
   ManualBookingService,
 } from "../application/booking-service";
+
+import type {
+  CalendlyMcpBridge,
+  CalendlyMcpResult,
+} from "../infrastructure/calendly-mcp/calendly-mcp-bridge";
 
 import {
   buildInstructions,
@@ -25,27 +32,50 @@ export type ManualTurnResult = {
   usage: ManualTurnUsage;
 };
 
+type PendingCalendlyApproval = {
+  responseId: string;
+  callId: string;
+  toolName: string;
+  arguments: string;
+};
+
 export class ManualBookingAssistant {
   private previousResponseId:
     string | undefined;
 
-  private readonly executeTool:
-    ReturnType<typeof createToolExecutor>;
+  private pendingCalendlyApproval:
+    PendingCalendlyApproval |
+    undefined;
+
+  private readonly executeLocalTool:
+    ReturnType<
+      typeof createToolExecutor
+    >;
 
   public constructor(
     private readonly openai: OpenAI,
     private readonly model: string,
     private readonly service:
       ManualBookingService,
+    private readonly calendly:
+      CalendlyMcpBridge,
     private readonly maxToolTurns = 6,
   ) {
-    this.executeTool =
+    this.executeLocalTool =
       createToolExecutor(service);
   }
 
   public async send(
     userMessage: string,
   ): Promise<ManualTurnResult> {
+    if (
+      this.pendingCalendlyApproval
+    ) {
+      return this.handlePendingApproval(
+        userMessage,
+      );
+    }
+
     const decision =
       this.service
         .recordExplicitDecision(
@@ -64,39 +94,116 @@ export class ManualBookingAssistant {
       );
     }
 
-    let input:
-      OpenAI.Responses.ResponseInputItem[] =
-        [
-          {
-            role: "user",
-            content: userMessage,
-          },
-        ];
+    return this.run([
+      {
+        role: "user",
+        content: userMessage,
+      },
+    ]);
+  }
 
-    const usage: ManualTurnUsage = {
-      requests: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-    };
+  private async handlePendingApproval(
+    userMessage: string,
+  ): Promise<ManualTurnResult> {
+    const pending =
+      this.pendingCalendlyApproval;
+
+    if (!pending) {
+      throw new Error(
+        "No Calendly approval is pending.",
+      );
+    }
+
+    const decision =
+      userMessage
+        .trim()
+        .toLowerCase();
+
+    const approved =
+      decision === "confirm" ||
+      decision === "approve" ||
+      decision === "yes";
+
+    const rejected =
+      decision === "cancel" ||
+      decision === "reject" ||
+      decision === "no";
+
+    if (!approved && !rejected) {
+      return {
+        text:
+          this.renderCalendlyApproval(
+            pending,
+          ),
+
+        usage:
+          this.emptyUsage(),
+      };
+    }
+
+    this.pendingCalendlyApproval =
+      undefined;
+
+    this.previousResponseId =
+      pending.responseId;
+
+    const result:
+      CalendlyMcpResult =
+        approved
+          ? await this.calendly
+              .execute(
+                pending.toolName,
+                pending.arguments,
+              )
+          : {
+              ok: false,
+              content:
+                "The visitor cancelled the booking.",
+            };
+
+    return this.run([
+      {
+        type:
+          "function_call_output",
+
+        call_id:
+          pending.callId,
+
+        output:
+          JSON.stringify(result),
+      },
+    ]);
+  }
+
+  private async run(
+    initialInput:
+      OpenAI.Responses.ResponseInputItem[],
+  ): Promise<ManualTurnResult> {
+    let input = initialInput;
+
+    const usage =
+      this.emptyUsage();
 
     for (
       let toolTurn = 0;
-      toolTurn < this.maxToolTurns;
+      toolTurn <
+        this.maxToolTurns;
       toolTurn += 1
     ) {
-      const pending =
+      const pendingBooking =
         this.service
           .getPendingBooking();
 
       const mustExecuteConfirmedBooking =
-        pending?.status ===
+        pendingBooking?.status ===
         "confirmed";
 
       const response =
-        await this.openai.responses.create(
-          {
-            model: this.model,
+        await this.openai
+          .responses
+          .create({
+            model:
+              this.model,
 
             instructions:
               buildInstructions(
@@ -105,14 +212,20 @@ export class ManualBookingAssistant {
 
             input,
 
-            tools: manualBookingTools,
+            tools: [
+              ...manualBookingTools,
+              ...this.calendly.tools,
+            ],
 
-            parallel_tool_calls: false,
+            parallel_tool_calls:
+              false,
 
             tool_choice:
               mustExecuteConfirmedBooking
                 ? {
-                    type: "function",
+                    type:
+                      "function",
+
                     name:
                       "book_consultation",
                   }
@@ -124,8 +237,7 @@ export class ManualBookingAssistant {
                     this.previousResponseId,
                 }
               : {}),
-          },
-        );
+          });
 
       this.previousResponseId =
         response.id;
@@ -134,13 +246,16 @@ export class ManualBookingAssistant {
 
       if (response.usage) {
         usage.inputTokens +=
-          response.usage.input_tokens;
+          response.usage
+            .input_tokens;
 
         usage.outputTokens +=
-          response.usage.output_tokens;
+          response.usage
+            .output_tokens;
 
         usage.totalTokens +=
-          response.usage.total_tokens;
+          response.usage
+            .total_tokens;
       }
 
       const toolCalls =
@@ -150,7 +265,9 @@ export class ManualBookingAssistant {
             "function_call",
         );
 
-      if (toolCalls.length === 0) {
+      if (
+        toolCalls.length === 0
+      ) {
         const latestPending =
           this.service
             .getPendingBooking();
@@ -165,7 +282,9 @@ export class ManualBookingAssistant {
         }
 
         return {
-          text: response.output_text,
+          text:
+            response.output_text,
+
           usage,
         };
       }
@@ -175,7 +294,8 @@ export class ManualBookingAssistant {
           [];
 
       for (
-        const toolCall of toolCalls
+        const toolCall
+        of toolCalls
       ) {
         console.log(
           `\n[Tool request: ${toolCall.name}]`,
@@ -185,37 +305,130 @@ export class ManualBookingAssistant {
           `[Arguments: ${toolCall.arguments}]`,
         );
 
+        if (
+          this.calendly
+            .ownsTool(
+              toolCall.name,
+            )
+        ) {
+          if (
+            this.calendly
+              .requiresApproval(
+                toolCall.name,
+              )
+          ) {
+            this.pendingCalendlyApproval =
+              {
+                responseId:
+                  response.id,
+
+                callId:
+                  toolCall.call_id,
+
+                toolName:
+                  toolCall.name,
+
+                arguments:
+                  toolCall.arguments,
+              };
+
+            return {
+              text:
+                this.renderCalendlyApproval(
+                  this
+                    .pendingCalendlyApproval,
+                ),
+
+              usage,
+            };
+          }
+
+          const result =
+            await this.calendly
+              .execute(
+                toolCall.name,
+                toolCall.arguments,
+              );
+
+          toolOutputs.push({
+            type:
+              "function_call_output",
+
+            call_id:
+              toolCall.call_id,
+
+            output:
+              JSON.stringify(
+                result,
+              ),
+          });
+
+          continue;
+        }
+
         const result =
-          await this.executeTool(
+          await this.executeLocalTool(
             toolCall.name,
             toolCall.arguments,
           );
 
-        console.log(
-          "[Tool result]",
-          result,
-        );
-
         toolOutputs.push({
           type:
             "function_call_output",
+
           call_id:
             toolCall.call_id,
+
           output:
             JSON.stringify(result),
         });
       }
 
-      /*
-       * The next API call continues from
-       * the previous response ID and sends
-       * only the new tool outputs.
-       */
       input = toolOutputs;
     }
 
     throw new Error(
       "Maximum tool-turn limit exceeded.",
     );
+  }
+
+  private renderCalendlyApproval(
+    pending:
+      PendingCalendlyApproval,
+  ): string {
+    let details =
+      pending.arguments;
+
+    try {
+      details =
+        JSON.stringify(
+          JSON.parse(
+            pending.arguments,
+          ),
+          null,
+          2,
+        );
+    } catch {
+      // Preserve the original value.
+    }
+
+    return `
+Please confirm this Calendly booking.
+
+${details}
+
+Reply CONFIRM to create the booking,
+or CANCEL to stop.
+`.trim();
+  }
+
+  private emptyUsage():
+    ManualTurnUsage {
+    return {
+      requests: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+    };
   }
 }
